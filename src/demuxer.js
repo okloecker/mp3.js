@@ -1,4 +1,5 @@
 var AV = require('av');
+const debug = require("debug")("gpl:demuxer");
 var ID3v23Stream = require('./id3').ID3v23Stream;
 var ID3v22Stream = require('./id3').ID3v22Stream;
 var MP3FrameHeader = require('./header');
@@ -91,13 +92,18 @@ var MP3Demuxer = AV.Demuxer.extend(function() {
         // Check for Xing/Info tag
         stream.advance(XING_OFFSETS[header.flags & MP3FrameHeader.FLAGS.LSF_EXT ? 1 : 0][header.nchannels() === 1 ? 1 : 0]);
         var tag = stream.readString(4);
+        var lameInfo;
         if (tag === 'Xing' || tag === 'Info') {
             var flags = stream.readUInt32();
             if (flags & 1)
                 frames = stream.readUInt32();
 
+            debug('Xing frames:', frames);
+
             if (flags & 2)
                 var size = stream.readUInt32();
+
+            debug('Xing size:', size);
 
             if (flags & 4 && frames && size && this.seekPoints.length === 0) {
                 for (var i = 0; i < 100; i++) {
@@ -108,8 +114,44 @@ var MP3Demuxer = AV.Demuxer.extend(function() {
                 }
             }
 
-            if (flags & 8)
-                stream.advance(4);
+            if (flags & 8) {
+              var qualityIndicator = stream.readUInt32();
+              debug('Xing qualityIndicator:', qualityIndicator);
+            }
+
+            if (flags & 0xF) {
+              var lameTag = stream.readString(9);
+              debug('Xing LAME version:', lameTag);
+              var infoTagRevAndVBRmethod = stream.readUInt8();
+              var infoTagRevision = infoTagRevAndVBRmethod >> 4;
+              var VBRmethod = infoTagRevAndVBRmethod & 0x0F;
+              debug('Xing infoTagRevision:', infoTagRevision);
+              debug('Xing VBR method:', VBRmethod);
+
+              var furtherBytes = stream.readString(10);
+
+              // if ABR: specified bitrate, else: minimal bitrate
+              var bitrate = stream.readUInt8();
+              debug('Xing ABR/minimal bitrate:', bitrate);
+
+              // read 3 bytes:
+              // front padding: first (msb) 12 bits 
+              // end padding: last (lsb) 12 bits 
+              var gaplessBits1 = stream.readUInt8(); //  36 = 0x24  0010 0100
+              var gaplessBits2 = stream.readUInt8(); //   4 = 0x04  0000 0100
+              var gaplessBits3 = stream.readUInt8(); // 212 = 0xd4  1101 0100
+              debug('Xing gapless bits:', gaplessBits1, gaplessBits2, gaplessBits3);
+              var frontPadding = ((gaplessBits1 << 4) + (gaplessBits2 >> 4));
+              // expect 001001000000 = 0x240 = 576
+              debug('frontPadding:', frontPadding);
+              var endPadding = (((gaplessBits2 & 0x0F) << 8) + gaplessBits3) ;
+              // expect 010011010100 = 0x04d4 = 1236
+              debug('endPadding:', endPadding);
+
+              var noiseShaping = stream.readUInt8();
+
+              lameInfo = { lameTag, frontPadding, endPadding, size };
+            }
 
         } else {
             // Check for VBRI tag (always 32 bytes after end of mpegaudio header)
@@ -139,7 +181,8 @@ var MP3Demuxer = AV.Demuxer.extend(function() {
         if (!frames)
             return false;
 
-        this.emit('duration', (frames * header.nbsamples() * 32) / header.samplerate * 1000 | 0);
+      this.emit('duration', {duration:(frames * header.nbsamples() * 32) / header.samplerate * 1000 | 0,
+        lameInfo});
         return true;
     };
 

@@ -108,9 +108,9 @@ Layer3.prototype.decode = function(stream, frame) {
         stream.md_len = 0;
         frame_used = md_len;
     } else {
-        if (si.main_data_begin > stream.md_len) {
-            throw new Error('bad main_data_begin pointer');
-        } else {
+        // if (si.main_data_begin > stream.md_len) {
+        //     throw new Error('bad main_data_begin pointer');
+        // } else {
             var old_md_len = stream.md_len;
             
             if (md_len > si.main_data_begin) {
@@ -125,7 +125,7 @@ Layer3.prototype.decode = function(stream, frame) {
             
             ptr = new AV.Bitstream(AV.Stream.fromBuffer(new AV.Buffer(stream.main_data)));
             ptr.advance((old_md_len - si.main_data_begin) * 8);
-        }
+        // }
     }
     
     var frame_free = frame_space - frame_used;
@@ -729,8 +729,8 @@ Layer3.prototype.huffmanDecode = function(stream, xr, channel, sfbwidth, part2_l
          xrptr += 2;
     }
     
-    if (cachesz + bits_left < 0)
-        throw new Error('Huffman data overrun');
+    // if (cachesz + bits_left < 0)
+    //     throw new Error('Huffman data overrun');
     
     // count1    
     var table = huffman.huff_quad_table[channel.flags & tables.COUNT1TABLE_SELECT];
